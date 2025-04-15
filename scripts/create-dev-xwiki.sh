@@ -1,8 +1,10 @@
 #!/usr/bin/sh
 
-############################################################
-## Script to create an XWiki installation for development ##
-############################################################
+#############################################################
+## Script to create an XWiki installation for development. ##
+## Just start the script without arguments and follow the  ##
+## instructions provided by the script.                    ##
+#############################################################
 
 set -e
 
