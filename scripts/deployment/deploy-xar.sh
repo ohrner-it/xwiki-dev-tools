@@ -1,14 +1,15 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 
 # Script to build the xar deployment artifact and automatically deploy it on the dev server.
+set -e
 
-if [ "$#" -lt 3 || [ "$#" -gt 4 ] || [ "$#" -eq 4 ] && [ "$1" != "--netrc-file" ]; then
+if [ "$#" -lt 2 ] || [ "$#" -gt 3 ] || { [ "$#" -eq 3 ] && [ "$1" != "--netrc-file" ]; }; then
   echo "Script will build the XWiki xar file and deploy it on the development server"
   echo
   echo "Usage:"
-  echo "  sh $0 <USERNAME>:<PASSWORD> <REST_ENTRY_POINT> <PAGE_TO_DEPLOY>"
+  echo "  sh $0 <USERNAME>:<PASSWORD> <REST_ENTRY_POINT>"
   echo "  or"
-  echo "  sh $0 --netrc-file <PATH_TO_NETRC_FILE> <REST_ENTRY_POINT> <PAGE_TO_DEPLOY>"
+  echo "  sh $0 --netrc-file <PATH_TO_NETRC_FILE> <REST_ENTRY_POINT>"
   exit 1
 fi
 
@@ -22,13 +23,11 @@ if [ "$#" -eq 2 ]; then
   credentials=$1
   netrcFile=""
   restEntryPoint=$2
-  pageToDeploy=$3
 else
   usingNetrcFile=true
   credentials=""
   netrcFile=$2
   restEntryPoint=$3
-  pageToDeploy=$4
 fi
 
 mvnCommand=$(which mvnd)
@@ -53,10 +52,17 @@ callMaven() {
 }
 
 callCurl() {
+  echo
+  echo "--------------------------------------------------"
+  echo "Calling curl with the following custom parameters:"
+  echo $*
+  echo "--------------------------------------------------"
+  echo
+
   if [ "$usingNetrcFile" = "true" ]; then
-    curl -netrc-file "$netrcFile" "$@"
+    curl -v --fail-with-body -netrc-file "$netrcFile" "$@"
   else
-    curl -u "$credentials" "$@"
+    curl -v --fail-with-body -u "$credentials" "$@"
   fi
 
   local exitCode=$?
@@ -67,7 +73,7 @@ callCurl() {
   fi
 }
 
-pageContent=$(callCurl -s "$restEntryPoint/../bin/view/Main")
+pageContent=$(callCurl "$restEntryPoint/../bin/view/Main")
 formToken=$(echo "$pageContent" | grep -oP 'data-xwiki-form-token="\K[^"]+')
 
 if [ "$formToken" = "" ]; then
@@ -75,26 +81,25 @@ if [ "$formToken" = "" ]; then
   exit 2
 fi
 
-# we use mvnd as it is much faster than mnv
+# Use `mvnd` if available as it is much faster, otherwise use `mvn`.
 callMaven package package # will be called twice due to some strange maven issues
 
 ls ./target/*.xar > /dev/null # will fail if no xar file is available
 xarFilename=$(ls ./target/*.xar -t | head -1 | xargs basename)
 
 echo
-echo "Trying to deploy xar file on $restEntryPoint..."
-
-callCurl -X DELETE \
-  -s \
-  -H "XWiki-Form-Token: $formToken" \
-  "$restEntryPoint/wikis/xwiki/$pageToDeploy" > /dev/null
-
-callCurl -X POST \
-  -s \
-  -H "XWiki-Form-Token: $formToken" \
-  -F "file=@./target/$xarFilename" \
-  -F "history=RESET" \
-  "$restEntryPoint/wikis/xwiki" > /dev/null
+echo "Trying to deploy xar file \"target/$xarFilename\" on $restEntryPoint..."
 
 echo
-echo "Deployment was successful ($(date "+%Y-%m-%d %H:%M:%S"))."
+echo "Installing xar file \"target/$xarFilename\":"
+
+callCurl \
+  -H "XWiki-Form-Token: $formToken" \
+  -F "file=@./target/$xarFilename" \
+  -F "backup=false" \
+  -F "history=RESET" \
+  "$restEntryPoint/wikis/xwiki"
+
+echo
+echo
+echo "Deployment of \"target/$xarFilename\" was successful ($(date "+%Y-%m-%d %H:%M:%S"))."
