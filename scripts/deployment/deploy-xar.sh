@@ -1,7 +1,6 @@
 #!/usr/bin/env sh
 
 # Script to build the xar deployment artifact and automatically deploy it on the dev server.
-set -e
 
 if [ "$#" -lt 2 ] || [ "$#" -gt 3 ] || { [ "$#" -eq 3 ] && [ "$1" != "--netrc-file" ]; }; then
   echo "Script will build the XWiki xar file and deploy it on the development server"
