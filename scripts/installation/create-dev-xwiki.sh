@@ -18,6 +18,10 @@ archiveFile=""
 installationFolder=""
 read -p "Enter XWiki version: " xwikiVersion
 read -p "Enter relative or absolute path to installation folder: " installationFolder
+# Password for the built-in "superadmin" account, enabled below to provide a
+# user that is guaranteed to have Programming Right for scripted administration.
+read -p "Enter superadmin password to enable [superadmin]: " superadminPassword
+superadminPassword="${superadminPassword:-superadmin}"
 read -p "Enter the data archive file to be imported (leave empty if not needed): " archiveFile
 
 installationFolder=$(realpath "$installationFolder")
@@ -41,6 +45,11 @@ sed -i -E "s|(# )(extension.repositories = maven-xwiki:maven:https://nexus.xwiki
 sed -i -E "s|(# )(extension.repositories = store.xwiki.com:xwiki:https://store.xwiki.com/xwiki/rest/)|\2|" "$installationFolder/webapps/xwiki/WEB-INF/xwiki.properties"
 sed -i -E "s|(# )(extension.repositories = extensions.xwiki.org:xwiki:https://extensions.xwiki.org/xwiki/rest/)|\2|" "$installationFolder/webapps/xwiki/WEB-INF/xwiki.properties"
 
+# Enable the built-in "superadmin" account (disabled by default). It always has
+# Programming Right, which is required for scripted extension management
+# (install / uninstall / cache clearing). Dev-only: never enable superadmin in prod.
+sed -i -E "s|^# xwiki.superadminpassword=.*|xwiki.superadminpassword=${superadminPassword}|" "$installationFolder/webapps/xwiki/WEB-INF/xwiki.cfg"
+
 if [ -e "$archiveFile" ]
 then
     bsdtar -xf "$archiveFile" -C "$installationFolder/data" --strip-components 1
@@ -50,4 +59,4 @@ echo "XWiki has been successfully installed in folder \"$installationFolder\"."
 echo "You can start XWiki with $installationFolder/start_xwiki.sh"
 echo "Then open your browser and call http://localhost:8080"
 echo "The username of the superuser is \"Admin\", the preset password is \"admin\"."
-
+echo "The \"superadmin\" account is enabled with password \"$superadminPassword\"."
