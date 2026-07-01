@@ -23,6 +23,6 @@ Just copy that script in the base directory of your XWIKI dev installation.
 
 Run
 
-- `sh xwiki-dev start`
-- `sh xwiki-dev restart`
-- `sh xwiki-dev stop`
+- `sh xwiki-dev.sh start`
+- `sh xwiki-dev.sh restart`
+- `sh xwiki-dev.sh stop`
