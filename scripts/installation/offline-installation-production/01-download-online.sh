@@ -9,8 +9,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/00-config.sh"
 
-echo ">>> (Re-)creating ${TRANSFER_DIR}"
-rm -rf "${TRANSFER_DIR}"
+echo ">>> Ensuring ${TRANSFER_DIR} exists"
 mkdir -p "${TRANSFER_DIR}"
 cd "${TRANSFER_DIR}"
 
@@ -22,6 +21,9 @@ curl -L -O "${TOMCAT_URL}"
 
 echo ">>> Downloading XWiki WAR"
 curl -L -O "${XWIKI_URL}"
+
+echo ">>> Downloading XIP package (offline Standard Flavor extension repository)"
+curl -L -O "${XIP_URL}"
 
 echo ">>> Downloading PostgreSQL JDBC driver"
 curl -L -O "${JDBC_URL}"

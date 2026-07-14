@@ -9,6 +9,11 @@
 #    this works regardless of the exact comment layout of the shipped file
 #    for a given XWiki version.
 # 2. Sets the "permanent directory" in xwiki.properties.
+# 3. Disables remote extension repositories (extension.repositories=), so
+#    XWiki doesn't try to reach nexus.xwiki.org at runtime. This relies on
+#    02-install-offline.sh having already extracted the XIP package into
+#    <permanent directory>/extension/repository, so the Distribution Wizard
+#    can install the Standard Flavor from that local repository instead.
 #
 # The DB password is requested interactively again here (it was
 # intentionally not stored after step 03) and ends up only in
@@ -81,6 +86,15 @@ elif grep -q '^#environment.permanentDirectory' "${XWIKI_PROPERTIES}" 2>/dev/nul
   sed -i "s|^#environment.permanentDirectory.*|environment.permanentDirectory=${XWIKI_DATA_DIR}|" "${XWIKI_PROPERTIES}"
 else
   echo "environment.permanentDirectory=${XWIKI_DATA_DIR}" >> "${XWIKI_PROPERTIES}"
+fi
+
+echo ">>> Disabling remote extension repositories (fully offline instance)"
+if grep -q '^extension.repositories' "${XWIKI_PROPERTIES}" 2>/dev/null; then
+  sed -i "s|^extension.repositories.*|extension.repositories=|" "${XWIKI_PROPERTIES}"
+elif grep -q '^#extension.repositories[[:space:]]*=' "${XWIKI_PROPERTIES}" 2>/dev/null; then
+  sed -i "s|^#extension.repositories[[:space:]]*=.*|extension.repositories=|" "${XWIKI_PROPERTIES}"
+else
+  echo "extension.repositories=" >> "${XWIKI_PROPERTIES}"
 fi
 
 echo ">>> Setting ownership / permissions"

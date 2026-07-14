@@ -6,13 +6,18 @@
 #
 # Steps:
 #   1. Create a system user/group for the Tomcat/XWiki service
-#   2. Extract JRE + Tomcat into ${INSTALL_DIR}
-#   3. Extract the XWiki WAR into ${WEBAPP_DIR} (not deployed as a plain
+#   2. Extract the JRE into ${JRE_DIR} and Tomcat into ${TOMCAT_DIR}
+#   3. Configure Tomcat's HTTP connector to listen on ${HTTP_PORT}
+#   4. Extract the XWiki WAR into ${WEBAPP_DIR} (not deployed as a plain
 #      .war, so we can adjust config files before the first start)
-#   4. Copy the PostgreSQL JDBC driver into the webapp's WEB-INF/lib
-#   5. Create the XWiki "permanent directory"
-#   6. Write setenv.sh
-#   7. Set ownership to SERVICE_USER
+#   5. Copy the PostgreSQL JDBC driver into the webapp's WEB-INF/lib
+#   6. Create the XWiki "permanent directory" and extract the XIP package
+#   7. Write setenv.sh
+#   8. Set ownership to SERVICE_USER
+#
+# If HTTP_PORT is a privileged port (<1024, e.g. 80), Tomcat still runs as
+# the unprivileged SERVICE_USER; 05-install-systemd-service.sh grants the
+# CAP_NET_BIND_SERVICE capability via systemd so binding it works anyway.
 
 set -euo pipefail
 
@@ -41,13 +46,16 @@ fi
 
 echo ">>> Removing any previous installation in ${INSTALL_DIR}"
 rm -rf "${INSTALL_DIR}"
-mkdir -p "${INSTALL_DIR}/jre"
+mkdir -p "${JRE_DIR}" "${TOMCAT_DIR}"
 
-echo ">>> Extracting JRE"
-tar -xzf "${TRANSFER_DIR}/${JRE_ARCHIVE}" --strip-components=1 -C "${INSTALL_DIR}/jre"
+echo ">>> Extracting JRE into ${JRE_DIR}"
+tar -xzf "${TRANSFER_DIR}/${JRE_ARCHIVE}" --strip-components=1 -C "${JRE_DIR}"
 
-echo ">>> Extracting Tomcat"
-tar -xzf "${TRANSFER_DIR}/${TOMCAT_ARCHIVE}" --strip-components=1 -C "${INSTALL_DIR}"
+echo ">>> Extracting Tomcat into ${TOMCAT_DIR}"
+tar -xzf "${TRANSFER_DIR}/${TOMCAT_ARCHIVE}" --strip-components=1 -C "${TOMCAT_DIR}"
+
+echo ">>> Configuring Tomcat HTTP connector for port ${HTTP_PORT}"
+sed -i "s/Connector port=\"8080\"/Connector port=\"${HTTP_PORT}\"/" "${TOMCAT_DIR}/conf/server.xml"
 
 echo ">>> Extracting XWiki WAR into ${WEBAPP_DIR}"
 mkdir -p "${WEBAPP_DIR}"
@@ -66,16 +74,29 @@ cp "${TRANSFER_DIR}/${JDBC_JAR}" "${WEBAPP_DIR}/WEB-INF/lib/"
 echo ">>> Creating XWiki 'permanent directory': ${XWIKI_DATA_DIR}"
 mkdir -p "${XWIKI_DATA_DIR}"
 
-echo ">>> Writing ${INSTALL_DIR}/bin/setenv.sh"
-tee "${INSTALL_DIR}/bin/setenv.sh" > /dev/null <<EOSETENV
+echo ">>> Extracting XIP package (offline Standard Flavor) into ${XWIKI_DATA_DIR}/extension/repository"
+XIP_REPO_DIR="${XWIKI_DATA_DIR}/extension/repository"
+mkdir -p "${XIP_REPO_DIR}"
+if command -v unzip >/dev/null 2>&1; then
+  # -n: never overwrite existing files, as recommended by the XWiki docs
+  unzip -n -q "${TRANSFER_DIR}/${XIP_FILE}" -d "${XIP_REPO_DIR}"
+elif command -v python3 >/dev/null 2>&1; then
+  python3 -m zipfile -e "${TRANSFER_DIR}/${XIP_FILE}" "${XIP_REPO_DIR}/"
+else
+  echo "Neither 'unzip' nor 'python3' is available - please provide one of them offline." >&2
+  exit 1
+fi
+
+echo ">>> Writing ${TOMCAT_DIR}/bin/setenv.sh"
+tee "${TOMCAT_DIR}/bin/setenv.sh" > /dev/null <<EOSETENV
 #!/bin/sh
 # Java Runtime Environment
-export JAVA_HOME=${INSTALL_DIR}/jre
-export JRE_HOME=${INSTALL_DIR}/jre
+export JAVA_HOME=${JRE_DIR}
+export JRE_HOME=${JRE_DIR}
 
 # Tomcat location
-export CATALINA_HOME=${INSTALL_DIR}
-export CATALINA_BASE=${INSTALL_DIR}
+export CATALINA_HOME=${TOMCAT_DIR}
+export CATALINA_BASE=${TOMCAT_DIR}
 
 # JVM options for XWiki
 export CATALINA_OPTS="\\
@@ -87,11 +108,17 @@ export CATALINA_OPTS="\\
 --add-opens=java.base/java.util=ALL-UNNAMED \\
 --add-opens=java.base/java.util.concurrent=ALL-UNNAMED"
 EOSETENV
-chmod +x "${INSTALL_DIR}/bin/setenv.sh"
+chmod +x "${TOMCAT_DIR}/bin/setenv.sh"
 
 echo ">>> Setting ownership"
 chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${INSTALL_DIR}"
 chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "${XWIKI_DATA_DIR}"
+
+if [[ "${HTTP_PORT}" -lt 1024 ]]; then
+  echo ">>> Port ${HTTP_PORT} is a privileged port - 05-install-systemd-service.sh"
+  echo "    will grant CAP_NET_BIND_SERVICE via systemd so Tomcat can bind it"
+  echo "    without running as root."
+fi
 
 echo ""
 echo ">>> Done. Next steps:"
