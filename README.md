@@ -26,3 +26,7 @@ Run
 - `sh xwiki-dev.sh start`
 - `sh xwiki-dev.sh restart`
 - `sh xwiki-dev.sh stop`
+
+## Experimental!!!
+
+Install scripts for XWiki on production server (run at own risk!!!) in folder "installation/offline-installation-production"
