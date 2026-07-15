@@ -31,7 +31,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/00-config.sh"
 
 HIBERNATE_CFG="${WEBAPP_DIR}/WEB-INF/hibernate.cfg.xml"
-XWIKI_PROPERTIES="${WEBAPP_DIR}/WEB-INF/classes/xwiki.properties"
+XWIKI_PROPERTIES="${WEBAPP_DIR}/WEB-INF/xwiki.properties"
 
 if [[ ! -f "${HIBERNATE_CFG}" ]]; then
   echo "Not found: ${HIBERNATE_CFG} - did you run 02-install-offline.sh?" >&2
@@ -80,21 +80,31 @@ echo ">>> Writing new hibernate.cfg.xml for PostgreSQL"
 unset DB_PASSWORD
 
 echo ">>> Setting permanent directory in xwiki.properties: ${XWIKI_DATA_DIR}"
-if grep -q '^environment.permanentDirectory' "${XWIKI_PROPERTIES}" 2>/dev/null; then
-  sed -i "s|^environment.permanentDirectory.*|environment.permanentDirectory=${XWIKI_DATA_DIR}|" "${XWIKI_PROPERTIES}"
-elif grep -q '^#environment.permanentDirectory' "${XWIKI_PROPERTIES}" 2>/dev/null; then
-  sed -i "s|^#environment.permanentDirectory.*|environment.permanentDirectory=${XWIKI_DATA_DIR}|" "${XWIKI_PROPERTIES}"
+
+if grep -q '^[[:space:]]*environment\.permanentDirectory[[:space:]]*=' "${XWIKI_PROPERTIES}" 2>/dev/null; then
+  sed -i \
+    "s|^[[:space:]]*environment\.permanentDirectory[[:space:]]*=.*|environment.permanentDirectory=${XWIKI_DATA_DIR}|" \
+    "${XWIKI_PROPERTIES}"
+elif grep -q '^[[:space:]]*#[[:space:]]*environment\.permanentDirectory[[:space:]]*=' "${XWIKI_PROPERTIES}" 2>/dev/null; then
+  sed -i \
+    "s|^[[:space:]]*#[[:space:]]*environment\.permanentDirectory[[:space:]]*=.*|environment.permanentDirectory=${XWIKI_DATA_DIR}|" \
+    "${XWIKI_PROPERTIES}"
 else
-  echo "environment.permanentDirectory=${XWIKI_DATA_DIR}" >> "${XWIKI_PROPERTIES}"
+  printf '\nenvironment.permanentDirectory=%s\n' "${XWIKI_DATA_DIR}" >> "${XWIKI_PROPERTIES}"
 fi
 
 echo ">>> Disabling remote extension repositories (fully offline instance)"
-if grep -q '^extension.repositories' "${XWIKI_PROPERTIES}" 2>/dev/null; then
-  sed -i "s|^extension.repositories.*|extension.repositories=|" "${XWIKI_PROPERTIES}"
-elif grep -q '^#extension.repositories[[:space:]]*=' "${XWIKI_PROPERTIES}" 2>/dev/null; then
-  sed -i "s|^#extension.repositories[[:space:]]*=.*|extension.repositories=|" "${XWIKI_PROPERTIES}"
+
+if grep -q '^[[:space:]]*extension\.repositories[[:space:]]*=' "${XWIKI_PROPERTIES}" 2>/dev/null; then
+  sed -i \
+    "s|^[[:space:]]*extension\.repositories[[:space:]]*=.*|extension.repositories=|" \
+    "${XWIKI_PROPERTIES}"
+elif grep -q '^[[:space:]]*#[[:space:]]*extension\.repositories[[:space:]]*=' "${XWIKI_PROPERTIES}" 2>/dev/null; then
+  sed -i \
+    "s|^[[:space:]]*#[[:space:]]*extension\.repositories[[:space:]]*=.*|extension.repositories=|" \
+    "${XWIKI_PROPERTIES}"
 else
-  echo "extension.repositories=" >> "${XWIKI_PROPERTIES}"
+  printf '\nextension.repositories=\n' >> "${XWIKI_PROPERTIES}"
 fi
 
 echo ">>> Setting ownership / permissions"

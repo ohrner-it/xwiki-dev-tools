@@ -30,7 +30,9 @@ curl -L -O "${JDBC_URL}"
 
 # Copy the config script into the transfer directory as well, so the offline
 # machine uses exactly the same versions/paths.
-cp "${SCRIPT_DIR}/00-config.sh" "${TRANSFER_DIR}/"
+if [ "$(realpath "$SCRIPT_DIR")" != "$(realpath "$TRANSFER_DIR")" ]; then
+    cp "${SCRIPT_DIR}/00-config.sh" "${TRANSFER_DIR}/"
+fi
 
 echo ""
 echo ">>> Done. Contents of ${TRANSFER_DIR}:"

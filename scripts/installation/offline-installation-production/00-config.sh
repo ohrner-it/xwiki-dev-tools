@@ -39,7 +39,7 @@ INSTALL_DIR="/opt/xwiki"                                   # base install direct
 JRE_DIR="${INSTALL_DIR}/jre"                                # JRE
 TOMCAT_DIR="${INSTALL_DIR}/tomcat"                          # Tomcat (CATALINA_HOME/BASE)
 WEBAPP_DIR="${TOMCAT_DIR}/webapps/xwiki"                    # extracted XWiki webapp
-XWIKI_DATA_DIR="/var/lib/xwiki"                            # XWiki "permanent directory"
+XWIKI_DATA_DIR="/var/lib/xwiki/data"                        # XWiki "permanent directory"
 SERVICE_USER="xwiki"
 SERVICE_GROUP="xwiki"
 
