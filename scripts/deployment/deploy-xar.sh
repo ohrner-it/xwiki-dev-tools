@@ -1,14 +1,69 @@
 #!/usr/bin/env sh
+# Uses "local" and "test -nt", which dash (/bin/sh on Debian and Ubuntu) and bash both support.
+# shellcheck shell=dash
 
 # Script to build the xar deployment artifact and automatically deploy it on the dev server.
 
-if [ "$#" -lt 2 ] || [ "$#" -gt 3 ] || { [ "$#" -eq 3 ] && [ "$1" != "--netrc-file" ]; }; then
+set -u
+
+usage() {
   echo "Script will build the XWiki xar file and deploy it on the development server"
   echo
   echo "Usage:"
-  echo "  sh $0 <USERNAME>:<PASSWORD> <REST_ENTRY_POINT>"
-  echo "  or"
-  echo "  sh $0 --netrc-file <PATH_TO_NETRC_FILE> <REST_ENTRY_POINT>"
+  echo "  sh $0 [OPTIONS] [<USERNAME>:<PASSWORD>] [<REST_ENTRY_POINT>]"
+  echo
+  echo "  <USERNAME>:<PASSWORD>  Credentials of an XWiki account allowed to import pages. Without them,"
+  echo "                         they are taken from ~/.netrc, or from the file given with --netrc-file."
+  echo "                         Prefer a netrc file: arguments are visible to other users in the"
+  echo "                         process list for as long as the build and the deployment take."
+  echo "  <REST_ENTRY_POINT>     Default: http://localhost:8080/xwiki/rest"
+  echo
+  echo "Options:"
+  echo "  --netrc-file <FILE>    Read the credentials from this netrc file."
+  echo "  --wiki <WIKI>          Wiki to import into. Default: xwiki (the main wiki)."
+  echo "  --no-build             Deploy the xar file in ./target as it is, without building it first."
+  echo "  -h, --help             Show this help."
+  echo
+  echo "Examples:"
+  echo "  sh $0"
+  echo "  sh $0 Admin:admin http://localhost:8080/xwiki/rest"
+  echo "  sh $0 --netrc-file ~/.netrc-xwiki http://localhost:8081/xwiki/rest"
+}
+
+credentials=""
+netrcFile=""
+restEntryPoint="http://localhost:8080/xwiki/rest"
+wiki="xwiki"
+build=true
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --netrc-file|--wiki)
+      if [ "$#" -lt 2 ]; then
+        echo >&2 "Error: $1 needs a value."
+        exit 1
+      fi ;;
+  esac
+  case "$1" in
+    --netrc-file) netrcFile="$2"; shift 2 ;;
+    --wiki) wiki="$2"; shift 2 ;;
+    --no-build) build=false; shift ;;
+    -h|--help) usage; exit 0 ;;
+    http://*|https://*) restEntryPoint="${1%/}"; shift ;;
+    -*) echo >&2 "Error: Unknown option \"$1\"."; echo >&2; usage >&2; exit 1 ;;
+    *:*)
+      # A second one is most likely a REST entry point given without http:// or https://.
+      if [ -n "$credentials" ]; then
+        echo >&2 "Error: \"$1\" is neither credentials, which were given already, nor a REST entry point, which has to start with http:// or https://."
+        exit 1
+      fi
+      credentials="$1"; shift ;;
+    *) echo >&2 "Error: Unexpected argument \"$1\"."; echo >&2; usage >&2; exit 1 ;;
+  esac
+done
+
+if [ -n "$credentials" ] && [ -n "$netrcFile" ]; then
+  echo >&2 "Error: Pass either credentials or --netrc-file, not both."
   exit 1
 fi
 
@@ -17,31 +72,23 @@ if ! [ -d "./src" ]; then
    exit 2
 fi
 
-if [ "$#" -eq 2 ]; then
-  usingNetrcFile=false
-  credentials=$1
-  netrcFile=""
-  restEntryPoint=$2
-else
-  usingNetrcFile=true
-  credentials=""
-  netrcFile=$2
-  restEntryPoint=$3
-fi
-
-mvnCommand=$(command -v mvnd)
-
-if [ "$mvnCommand" = "" ]; then
-  mvnCommand=$(command -v mvn)
-fi
-
-if [ "$mvnCommand" = "" ]; then
-  echo >&2 "Error: You need Maven to run this script!"
+if [ -n "$netrcFile" ] && ! [ -r "$netrcFile" ]; then
+  echo >&2 "Error: Cannot read netrc file \"$netrcFile\"."
   exit 2
 fi
 
 callMaven() {
-  "$mvnCommand" "$@"
+  local mvnCommand exitCode
+
+  # Use `mvnd` if available as it is much faster, otherwise use `mvn`.
+  mvnCommand=$(command -v mvnd || command -v mvn)
+
+  if [ -z "$mvnCommand" ]; then
+    echo >&2 "Error: You need Maven to run this script!"
+    exit 2
+  fi
+
+  "$mvnCommand" -B -ntp "$@"
   exitCode=$?
 
   if [ "$exitCode" -ne 0 ]; then
@@ -50,56 +97,66 @@ callMaven() {
   fi
 }
 
+# Credentials given on the command line are handed to curl through its standard input rather than
+# as an argument, so they do not show up in the process list. In a curl config file, backslashes
+# and double quotes inside a quoted value have to be escaped.
 callCurl() {
-  echo
-  echo "--------------------------------------------------"
-  echo "Calling curl with the following custom parameters:"
-  echo $*
-  echo "--------------------------------------------------"
-  echo
+  local escapedCredentials
 
-  if [ "$usingNetrcFile" = "true" ]; then
-    curl -v --fail-with-body -netrc-file "$netrcFile" "$@"
+  if [ -n "$credentials" ]; then
+    escapedCredentials=$(printf '%s' "$credentials" | sed 's/[\\"]/\\&/g')
+    printf 'user = "%s"\n' "$escapedCredentials" | curl --config - "$@"
+  elif [ -n "$netrcFile" ]; then
+    curl --netrc-file "$netrcFile" "$@"
   else
-    curl -v --fail-with-body -u "$credentials" "$@"
-  fi
-
-  local exitCode=$?
-
-  if [ "$exitCode" -ne 0 ]; then
-    echo >&2 "Error: cURL call failed with exit code $exitCode"
-    exit $exitCode
+    curl --netrc-optional "$@"
   fi
 }
 
-pageContent=$(callCurl "$restEntryPoint/../bin/view/Main")
-formToken=$(echo "$pageContent" | LC_ALL=C.UTF-8 grep -oP 'data-xwiki-form-token="\K[^"]+')
+if [ "$build" = true ]; then
+  callMaven package package # will be called twice due to some strange maven issues
+fi
 
-if [ "$formToken" = "" ]; then
-  echo >&2 "Error: Could not determine form token"
+# The newest xar file in ./target is the one just built.
+xarFile=""
+for candidate in ./target/*.xar; do
+  [ -f "$candidate" ] || continue
+  if [ -z "$xarFile" ] || [ "$candidate" -nt "$xarFile" ]; then
+    xarFile="$candidate"
+  fi
+done
+
+if [ -z "$xarFile" ]; then
+  echo >&2 "Error: There is no xar file in ./target to deploy."
   exit 2
 fi
 
-# Use `mvnd` if available as it is much faster, otherwise use `mvn`.
-callMaven package package # will be called twice due to some strange maven issues
-
-ls ./target/*.xar > /dev/null # will fail if no xar file is available
-xarFilename=$(ls ./target/*.xar -t | head -1 | xargs basename)
-
 echo
-echo "Trying to deploy xar file \"target/$xarFilename\" on $restEntryPoint..."
+echo "Deploying xar file \"$xarFile\" to wiki \"$wiki\" at $restEntryPoint..."
 
-echo
-echo "Installing xar file \"target/$xarFilename\":"
+# The xar is posted as the request body rather than as a multipart form: XWiki's CSRF protection
+# only applies to form submissions, so this needs no form token.
+responseFile=$(mktemp)
+httpCode=$(callCurl -sS -o "$responseFile" -w '%{http_code}' \
+  -X POST \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary "@$xarFile" \
+  "$restEntryPoint/wikis/$wiki?backup=false&history=RESET")
+exitCode=$?
 
-callCurl \
-  -H "XWiki-Form-Token: $formToken" \
-  -H "Content-type: application/octet-stream" \
-  -F "file=@./target/$xarFilename" \
-  -F "backup=false" \
-  -F "history=RESET" \
-  "$restEntryPoint/wikis/xwiki"
+if [ "$exitCode" -ne 0 ] || [ "$httpCode" != "200" ]; then
+  echo >&2 "Error: Deployment failed (curl exit code $exitCode, HTTP status ${httpCode:-none})."
+  # For these status codes the response is a generic error page; for others, such as a 500, it
+  # carries XWiki's own error message.
+  case "$httpCode" in
+    401) echo >&2 "The credentials were missing or rejected - see --help for how to pass them. XWiki also answers 401 if wiki \"$wiki\" does not exist." ;;
+    403) echo >&2 "The account is not allowed to import pages into wiki \"$wiki\"." ;;
+    404|405) echo >&2 "$restEntryPoint is not an XWiki REST entry point." ;;
+    *) head -c 2000 "$responseFile" >&2 ;;
+  esac
+  rm -f "$responseFile"
+  exit 1
+fi
+rm -f "$responseFile"
 
-echo
-echo
-echo "Deployment of \"target/$xarFilename\" was successful ($(date "+%Y-%m-%d %H:%M:%S"))."
+echo "Deployment of \"$xarFile\" was successful ($(date "+%Y-%m-%d %H:%M:%S"))."
