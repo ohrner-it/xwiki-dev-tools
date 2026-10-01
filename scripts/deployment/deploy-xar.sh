@@ -10,13 +10,14 @@ usage() {
   echo "Script will build the XWiki xar file and deploy it on the development server"
   echo
   echo "Usage:"
-  echo "  sh $0 [OPTIONS] [<USERNAME>:<PASSWORD>] [<REST_ENTRY_POINT>]"
+  echo "  sh $0 [OPTIONS] [<USERNAME>:<PASSWORD>] [<REST_ENTRY_POINT>] [-- <MAVEN_ARGUMENTS>]"
   echo
   echo "  <USERNAME>:<PASSWORD>  Credentials of an XWiki account allowed to import pages. Without them,"
   echo "                         they are taken from ~/.netrc, or from the file given with --netrc-file."
   echo "                         Prefer a netrc file: arguments are visible to other users in the"
   echo "                         process list for as long as the build and the deployment take."
   echo "  <REST_ENTRY_POINT>     Default: http://localhost:8080/xwiki/rest"
+  echo "  <MAVEN_ARGUMENTS>      Passed on to Maven, e.g. -DskipTests."
   echo
   echo "Options:"
   echo "  --netrc-file <FILE>    Read the credentials from this netrc file."
@@ -24,8 +25,16 @@ usage() {
   echo "  --no-build             Deploy the xar file in ./target as it is, without building it first."
   echo "  -h, --help             Show this help."
   echo
+  echo "Run it in the folder of the Maven module that builds the xar. In a module of a multi-module"
+  echo "project, the modules it depends on are built along with it (\"mvn -pl <module> -am package\")."
+  echo
+  echo "The pages are imported as they are, without the Extension Manager: Java code is not deployed,"
+  echo "and the Extension Manager does not learn about the new pages. To install an extension, also a"
+  echo "new build of one that is installed already, use deploy-extension.sh."
+  echo
   echo "Examples:"
   echo "  sh $0"
+  echo "  sh $0 -- -DskipTests"
   echo "  sh $0 Admin:admin http://localhost:8080/xwiki/rest"
   echo "  sh $0 --netrc-file ~/.netrc-xwiki http://localhost:8081/xwiki/rest"
 }
@@ -45,12 +54,13 @@ while [ "$#" -gt 0 ]; do
       fi ;;
   esac
   case "$1" in
+    --) shift; break ;;
     --netrc-file) netrcFile="$2"; shift 2 ;;
     --wiki) wiki="$2"; shift 2 ;;
     --no-build) build=false; shift ;;
     -h|--help) usage; exit 0 ;;
     http://*|https://*) restEntryPoint="${1%/}"; shift ;;
-    -*) echo >&2 "Error: Unknown option \"$1\"."; echo >&2; usage >&2; exit 1 ;;
+    -*) echo >&2 "Error: Unknown option \"$1\" - Maven arguments go after \"--\"."; echo >&2; usage >&2; exit 1 ;;
     *:*)
       # A second one is most likely a REST entry point given without http:// or https://.
       if [ -n "$credentials" ]; then
@@ -61,6 +71,7 @@ while [ "$#" -gt 0 ]; do
     *) echo >&2 "Error: Unexpected argument \"$1\"."; echo >&2; usage >&2; exit 1 ;;
   esac
 done
+# The remaining arguments are Maven's.
 
 if [ -n "$credentials" ] && [ -n "$netrcFile" ]; then
   echo >&2 "Error: Pass either credentials or --netrc-file, not both."
@@ -68,7 +79,7 @@ if [ -n "$credentials" ] && [ -n "$netrcFile" ]; then
 fi
 
 if ! [ -d "./src" ]; then
-   echo >&2 "Error: Please start this script from project root!"
+   echo >&2 "Error: Please start this script in the folder of the Maven module that builds the xar!"
    exit 2
 fi
 
@@ -114,7 +125,23 @@ callCurl() {
 }
 
 if [ "$build" = true ]; then
-  callMaven package package # will be called twice due to some strange maven issues
+  # In a module of a multi-module project, the modules it depends on are built along with it, so
+  # that they do not have to be in the local Maven repository already.
+  reactorRoot=$(pwd -P)
+  module=""
+  while parent=$(dirname "$reactorRoot") && [ -f "$parent/pom.xml" ] \
+    && grep -Eq "<module>[[:space:]]*(\./)?${reactorRoot##*/}/?[[:space:]]*</module>" "$parent/pom.xml"; do
+    module="${reactorRoot##*/}${module:+/$module}"
+    reactorRoot="$parent"
+  done
+
+  # "package" is given twice due to some strange maven issues.
+  if [ -n "$module" ]; then
+    echo "Building $module with the modules it depends on in $reactorRoot..."
+    callMaven -f "$reactorRoot/pom.xml" -pl "$module" -am package package "$@"
+  else
+    callMaven package package "$@"
+  fi
 fi
 
 # The newest xar file in ./target is the one just built.
@@ -127,7 +154,7 @@ for candidate in ./target/*.xar; do
 done
 
 if [ -z "$xarFile" ]; then
-  echo >&2 "Error: There is no xar file in ./target to deploy."
+  echo >&2 "Error: There is no xar file in ./target to deploy - is this the folder of the module that builds it?"
   exit 2
 fi
 

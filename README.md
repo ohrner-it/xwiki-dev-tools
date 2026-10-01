@@ -31,11 +31,13 @@ extension repository and the `superadmin` account; the preset `Admin` account ha
 
 ## deploy-xar.sh
 
-Will automatically build your project's xar and deploy it on your dev server. Run it from the
-project root:
+Will automatically build your project's xar and deploy it on your dev server. Run it in the folder
+of the Maven module that builds the xar - in a multi-module project, the modules it depends on are
+built along with it:
 
 ```bash
 deploy-xar.sh                                         # local server at http://localhost:8080
+deploy-xar.sh -- -DskipTests                          # arguments after -- are passed on to Maven
 deploy-xar.sh --netrc-file ~/.netrc-xwiki --no-build
 deploy-xar.sh Admin:admin http://localhost:8080/xwiki/rest
 ```
@@ -43,9 +45,37 @@ deploy-xar.sh Admin:admin http://localhost:8080/xwiki/rest
 Without credentials on the command line they are read from `~/.netrc`, e.g.
 `machine localhost login Admin password admin`. Prefer that: credentials given as an argument are
 visible in the process list. The pages are imported through XWiki's REST API, which replaces them
-without going through the Extension Manager.
+without going through the Extension Manager. That is the quickest way to try changes to wiki pages,
+but it does not deploy Java code - use `deploy-extension.sh` for that.
 
 Run `deploy-xar.sh --help` to get more information.
+
+## deploy-extension.sh
+
+Builds the extension (XAR or JAR) of the Maven module in the current folder with `mvn install` and
+installs it with its dependencies through the Extension Manager of your dev server - also again,
+after every new build of the same version:
+
+```bash
+deploy-extension.sh                                   # local server at http://localhost:8080
+deploy-extension.sh -- -DskipTests
+deploy-extension.sh --no-build --force http://localhost:8090/xwiki/rest
+```
+
+The Extension Manager never downloads a version again it has downloaded once, so simply installing
+a new build of a SNAPSHOT again leaves the old one in place - even after uninstalling it. The
+script therefore uninstalls the extensions the wiki has in another build than the local Maven
+repository, removes the Extension Manager's copies of them, and installs them again. This works
+without a restart, for JARs as well: their new classes are loaded. It applies to every extension
+with the same Maven group id, so that a JAR module of a project is updated along with the XAR that
+depends on it. The pages of a reinstalled XAR get the content of the new build.
+
+The credentials are given as for `deploy-xar.sh`, the account needs programming rights (`Admin`
+has them on the dev server): the script works through the hidden page `XWiki.DevToolsDeployExtension`
+of the main wiki, which it creates and updates, as neither the REST API nor the script services can
+replace a downloaded extension.
+
+Run `deploy-extension.sh --help` to get more information.
 
 ## xwiki-dev.sh
 
