@@ -26,7 +26,7 @@ usage() {
   echo "  -h, --help             Show this help."
   echo
   echo "Run it in the folder of the Maven module that builds the xar. In a module of a multi-module"
-  echo "project, the modules it depends on are built along with it (\"mvn -pl <module> -am package\")."
+  echo "project, the modules it depends on are built along with it (\"mvn -pl <module> -am clean package\")."
   echo
   echo "The pages are imported as they are, without the Extension Manager: Java code is not deployed,"
   echo "and the Extension Manager does not learn about the new pages. To install an extension, also a"
@@ -135,12 +135,13 @@ if [ "$build" = true ]; then
     reactorRoot="$parent"
   done
 
-  # "package" is given twice due to some strange maven issues.
+  # XWiki builds need "clean": building again on existing target folders puts XWiki's test
+  # configuration into target/classes, and packaging a XAR then fails on hibernate.cfg.xml.
   if [ -n "$module" ]; then
     echo "Building $module with the modules it depends on in $reactorRoot..."
-    callMaven -f "$reactorRoot/pom.xml" -pl "$module" -am package package "$@"
+    callMaven -f "$reactorRoot/pom.xml" -pl "$module" -am clean package "$@"
   else
-    callMaven package package "$@"
+    callMaven clean package "$@"
   fi
 fi
 

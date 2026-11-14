@@ -32,17 +32,18 @@ usage() {
   echo "  --verbose              Show the whole log of the Extension Manager, not only its warnings."
   echo "  -h, --help             Show this help."
   echo
-  echo "The extension is built with \"mvn install\", which puts it into the local Maven repository, one"
-  echo "of the extension repositories of the development server. In a module of a multi-module project,"
-  echo "the modules it depends on are built along with it (\"mvn -pl <module> -am install\")."
+  echo "The extension is built with \"mvn clean install\", which puts it into the local Maven repository,"
+  echo "one of the extension repositories of the development server. In a module of a multi-module"
+  echo "project, the modules it depends on are built along with it (\"mvn -pl <module> -am clean install\")."
   echo
   echo "The Extension Manager never downloads a version again it has once downloaded. If the wiki has"
   echo "another build of the version than the local Maven repository - as after every new build of a"
   echo "SNAPSHOT - this script uninstalls it, replaces the Extension Manager's copy with the new build and"
   echo "installs it again, without a restart. This applies to every extension with the same Maven group"
   echo "id, so that a JAR module of the project is updated along with the XAR that depends on it, and"
-  echo "extensions uninstalled along with them are installed again. The pages of a reinstalled XAR get"
-  echo "the content of the new build, changes made to them on the wiki are lost."
+  echo "extensions uninstalled along with them are installed again. As every build is a new one, the"
+  echo "modules built along with the extension are reinstalled on every run. The pages of a reinstalled"
+  echo "XAR get the content of the new build, changes made to them on the wiki are lost."
   echo
   echo "The work is done by the hidden page XWiki.DevToolsDeployExtension in the main wiki, which this"
   echo "script creates and updates. Its Groovy script needs programming rights, which Admin has."
@@ -178,11 +179,13 @@ if [ "$build" = true ]; then
     reactorRoot="$parent"
   done
 
+  # XWiki builds need "clean": building again on existing target folders puts XWiki's test
+  # configuration into target/classes, and packaging a XAR then fails on hibernate.cfg.xml.
   if [ -n "$module" ]; then
     echo "Building $module with the modules it depends on in $reactorRoot..."
-    callMaven -f "$reactorRoot/pom.xml" -pl "$module" -am install "$@"
+    callMaven -f "$reactorRoot/pom.xml" -pl "$module" -am clean install "$@"
   else
-    callMaven install "$@"
+    callMaven clean install "$@"
   fi
 fi
 
@@ -292,7 +295,7 @@ def deploy = {
   }
   def build = resolveBuild(id)
   if (build == null) {
-    say("${id} is not in ${buildRepositoryURI}. Build it with mvn install first.")
+    say("${id} is not in ${buildRepositoryURI}. Build it with mvn clean install first.")
     return 500
   }
 

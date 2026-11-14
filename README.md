@@ -52,9 +52,9 @@ Run `deploy-xar.sh --help` to get more information.
 
 ## deploy-extension.sh
 
-Builds the extension (XAR or JAR) of the Maven module in the current folder with `mvn install` and
-installs it with its dependencies through the Extension Manager of your dev server - also again,
-after every new build of the same version:
+Builds the extension (XAR or JAR) of the Maven module in the current folder with
+`mvn clean install` and installs it with its dependencies through the Extension Manager of your dev
+server - also again, after every new build of the same version:
 
 ```bash
 deploy-extension.sh                                   # local server at http://localhost:8080
@@ -68,7 +68,8 @@ script therefore uninstalls the extensions the wiki has in another build than th
 repository, removes the Extension Manager's copies of them, and installs them again. This works
 without a restart, for JARs as well: their new classes are loaded. It applies to every extension
 with the same Maven group id, so that a JAR module of a project is updated along with the XAR that
-depends on it. The pages of a reinstalled XAR get the content of the new build.
+depends on it. As every build is a new one, the modules built along with the extension are
+reinstalled on every run. The pages of a reinstalled XAR get the content of the new build.
 
 The credentials are given as for `deploy-xar.sh`, the account needs programming rights (`Admin`
 has them on the dev server): the script works through the hidden page `XWiki.DevToolsDeployExtension`
